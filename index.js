@@ -39,7 +39,7 @@ Apify.main(async () => {
                 nrec: $(this).find('.nrec').text(),
                 id: $(this).find('.title a').attr('href'),
                 title: $(this).find('.title a').text(),
-                author: $(this).find('.meta .date').text(),
+                author: $(this).find('.meta .author').text(),
                 date: $(this).find('.meta .date').text()
             }
         }).get()
