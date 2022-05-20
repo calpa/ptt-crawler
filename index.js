@@ -59,7 +59,8 @@ Apify.main(async () => {
 
     log.info(`Crawler finished, items: ${items.length}`)
 
-    const dataset = await Apify.openDataset(`ptt-${scrapingBoard}`)
+    // Use Default Dataset associated with the actor
+    const dataset = await Apify.openDataset(null)
     await dataset.pushData(items);
     console.log('Saving output...');
 });
