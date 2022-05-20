@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@waynechang65/ptt-crawler": "^2.2.2",
     "apify": "^2.3.2"
   },
   "scripts": {
