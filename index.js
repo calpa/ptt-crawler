@@ -79,7 +79,10 @@ Apify.main(async () => {
             await page.click("#action-bar-container > div > div.btn-group.btn-group-paging > a:nth-child(2)");
 
             await page.waitForSelector(stopSelector);
-            items = items.concat(await generateOutput(page))
+            log.info(`Page loaded: ${page.url()}`)
+            const currentPageItems = await generateOutput(page)
+            log.info(`There are ${currentPageItems.length} threads in Page: ${page.url()}`)
+            items = items.concat(currentPageItems)
         }
 
         // log.info(JSON.stringify(items))
