@@ -4,30 +4,6 @@ const {
     utils: { log },
 } = Apify;
 
-async function generateOutput (page) {
-    const results = await page.$$eval('.r-ent', (elements) => elements.map(element => {
-        let id;
-
-        try {
-            id = element.querySelector('.title').outerHTML.match(/\/[a-z]+\/[\w]+\/([\w.]+).html/)[0];
-        } catch (error) {
-            console.error(error);
-        }
-
-        return {
-            nrec: element.querySelector('.nrec').innerText,
-            // id: element.querySelector('.title').outerHTML,
-            // id: title.href,
-            id,
-            title: element.querySelector('.title').innerText,
-            author: element.querySelector('.meta .author').innerText,
-            date: element.querySelector('.meta .date').innerText
-        }
-    }));
-
-    return results;
-}
-
 Apify.main(async () => {
     const input = await Apify.getInput();
     if (!input || !input.scrapingBoard) {
@@ -35,70 +11,55 @@ Apify.main(async () => {
     }
 
     const { scrapingBoard, pages = 3 } = input;
-
-    const userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3723.0 Safari/537.36';
-    const stopSelector = '#main-container > div.r-list-container.action-bar-margin.bbs-screen';
+    const requestQueue = await Apify.openRequestQueue();
 
     const url = 'https://www.ptt.cc/bbs/' + scrapingBoard + '/index.html';
 
-    log.info('Launching Puppeteer...');
-    const launchContext = {
-        launchOptions: {
-            headless: true
+    await requestQueue.addRequest({ url });
+
+    let items = []
+
+    const handlePageFunction = async ({ request, $ }) => {
+        const title = $('title').text();
+
+        log.info(`The title of "${request.url}" is: ${title}.`);
+        if (request.url === url) {
+            const maxNumber = $('#action-bar-container > div > div.btn-group.btn-group-paging > a:nth-child(2)').attr('href').match(/index([0-9]+).html/)[1]
+            log.info(maxNumber);
+            const urls = Array.from(Array(pages).keys()).map(i => ({
+                url: `https://www.ptt.cc/bbs/${scrapingBoard}/index${maxNumber - i}.html`
+            }));
+            for (const url of urls) {
+                await requestQueue.addRequest(url)
+            }
         }
-    }
 
-    const browser = await Apify.launchPuppeteer(launchContext);
-    const page = await browser.newPage()
-    await page.setDefaultNavigationTimeout(180 * 1000); // 3 mins
-    await page.setRequestInterception(true);
+        const results = $('.r-ent').map(function (index, element) {
+            return {
+                nrec: $(this).find('.nrec').text(),
+                id: $(this).find('.title a').attr('href'),
+                title: $(this).find('.title a').text(),
+                author: $(this).find('.meta .date').text(),
+                date: $(this).find('.meta .date').text()
+            }
+        }).get()
 
-    page.on('request', request => {
-        if (request.resourceType() === 'image')
-            request.abort();
-        else
-            request.continue();
+        items = items.concat(results);
+    };
+
+    // Set up the crawler, passing a single options object as an argument.
+    const crawler = new Apify.CheerioCrawler({
+        requestQueue,
+        handlePageFunction,
     });
 
-    page.setUserAgent(userAgent);
-    let items = []
-    try {
-        await page.goto(url);
-        const over18Button = await page.$('.over18-button-container');
-        if (over18Button) {
-            over18Button.click();
-        }
-        await page.waitForSelector(stopSelector);
+    await crawler.run();
 
-        const title = await page.title();
-        log.info(`Title of the page "${url}" is "${title}".`);
+    await requestQueue.isFinished();
 
-        items = await generateOutput(page);
+    log.info(`Crawler finished, items: ${items.length}`)
 
-        for (let number = 0; number < pages; number++) {
-            await page.click("#action-bar-container > div > div.btn-group.btn-group-paging > a:nth-child(2)");
-
-            await page.waitForSelector(stopSelector);
-            log.info(`Page loaded: ${page.url()}`)
-            const currentPageItems = await generateOutput(page)
-            log.info(`There are ${currentPageItems.length} threads in Page: ${page.url()}`)
-            items = items.concat(currentPageItems)
-        }
-
-        // log.info(JSON.stringify(items))
-
-        log.info(`Total numbers of items: ${items.length}`)
-
-        const dataset = await Apify.openDataset(`ptt-${scrapingBoard}`)
-        await dataset.pushData(items);
-        console.log('Saving output...');
-
-
-        console.log('Closing Puppeteer...');
-        await browser.close();
-        console.log('Done.');
-
-    } catch (err) {
-        console.error(err)
-    }
+    const dataset = await Apify.openDataset(`ptt-${scrapingBoard}`)
+    await dataset.pushData(items);
+    console.log('Saving output...');
 });
